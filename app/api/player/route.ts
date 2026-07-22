@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { env } from "cloudflare:workers";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +33,7 @@ async function resolveUser(query: string) {
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q")?.trim();
-  const bindings = env as unknown as RobloxEnv;
+  const bindings = process.env as RobloxEnv;
   const apiKey = bindings.ROBLOX_API_KEY;
   const universeId = bindings.ROBLOX_UNIVERSE_ID || "10298144467";
   const datastoreId = bindings.ROBLOX_DATASTORE_ID || "TurnBaseLive";

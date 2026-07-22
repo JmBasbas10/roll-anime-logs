@@ -1,5 +1,3 @@
-import { env } from "cloudflare:workers";
-
 type AppEnv = {
   SUPABASE_URL?: string;
   SUPABASE_SECRET_KEY?: string;
@@ -8,7 +6,7 @@ type AppEnv = {
 };
 
 export function getServerConfig() {
-  const bindings = env as unknown as AppEnv;
+  const bindings = process.env as AppEnv;
   const supabaseUrl = bindings.SUPABASE_URL?.replace(/\/$/, "");
   const supabaseKey = bindings.SUPABASE_SECRET_KEY || bindings.SUPABASE_SERVICE_ROLE_KEY;
   return { supabaseUrl, supabaseKey, ingestSecret: bindings.ROBLOX_INGEST_SECRET };

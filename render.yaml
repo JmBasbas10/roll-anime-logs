@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: rollwatch
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: ROBLOX_API_KEY
+        sync: false
+      - key: ROBLOX_UNIVERSE_ID
+        value: "10298144467"
+      - key: ROBLOX_DATASTORE_ID
+        value: TurnBaseLive
+      - key: ROBLOX_DATASTORE_SCOPE
+        value: global
+      - key: ROBLOX_PLAYER_KEY_PREFIX
+        value: PLAYER_
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: ROBLOX_INGEST_SECRET
+        sync: false

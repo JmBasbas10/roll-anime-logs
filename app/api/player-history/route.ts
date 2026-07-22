@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { env } from "cloudflare:workers";
 
 export const dynamic = "force-dynamic";
 type RobloxEnv = { ROBLOX_API_KEY?: string; ROBLOX_UNIVERSE_ID?: string; ROBLOX_DATASTORE_ID?: string; ROBLOX_DATASTORE_SCOPE?: string; ROBLOX_PLAYER_KEY_PREFIX?: string };
@@ -12,7 +11,7 @@ export async function GET(request: NextRequest) {
   const target = requestedAt ? new Date(requestedAt) : null;
   if (!target || Number.isNaN(target.getTime())) return NextResponse.json({ error: "Choose a valid date and time." }, { status: 400 });
 
-  const bindings = env as unknown as RobloxEnv;
+  const bindings = process.env as RobloxEnv;
   const apiKey = bindings.ROBLOX_API_KEY;
   const universeId = bindings.ROBLOX_UNIVERSE_ID || "10298144467";
   const datastoreId = bindings.ROBLOX_DATASTORE_ID || "TurnBaseLive";

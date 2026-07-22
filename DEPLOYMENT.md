@@ -13,10 +13,26 @@ The migration creates:
 - atomic batch-ingestion functions; and
 - RLS with no anonymous table policies.
 
-## 2. Configure server secrets
+## 2. Push the project to GitHub
 
-Set these values locally in `.env.local` and in the deployment platform's
-server/runtime environment:
+Create a private GitHub repository and push this project. `.env.local` is
+ignored and must never be committed.
+
+## 3. Create the Render service
+
+In Render, choose **New > Blueprint**, connect the GitHub repository, and use
+the included `render.yaml`. Render will create a Node web service using:
+
+- build command: `npm ci && npm run build`
+- start command: `npm start`
+- health check: `/api/health`
+
+The Starter plan is selected because an always-on service is preferable for
+Roblox ingestion. Change the plan in Render if needed.
+
+## 4. Configure server secrets
+
+Set these values locally in `.env.local` and under **Render > Environment**:
 
 ```env
 SUPABASE_URL=https://your-project.supabase.co
@@ -27,7 +43,10 @@ ROBLOX_INGEST_SECRET=your-random-ingestion-secret
 Keep the existing `ROBLOX_*` Open Cloud values. Never create a
 `NEXT_PUBLIC_SUPABASE_SECRET_KEY` variable.
 
-## 3. Validate the backend
+Also copy the existing Roblox Open Cloud values shown in `.env.example`.
+Trigger a new Render deployment after saving the variables.
+
+## 5. Validate the backend
 
 After deployment, open `/api/health`. It reports only whether each integration
 is configured and never returns secret values.
@@ -41,7 +60,7 @@ The ingestion endpoints accept either one object or a JSON array of at most
 Both require `Authorization: Bearer <ROBLOX_INGEST_SECRET>`. A repeated
 `receiptId` or `giftId` is accepted as a duplicate and is never inserted twice.
 
-## 4. Connect Roblox
+## 6. Connect Roblox
 
 Enable **Game Settings > Security > Allow HTTP Requests**. Copy
 `examples/roblox/LogIngestor.lua` into `ServerScriptService`, then set its
@@ -54,13 +73,13 @@ The example batches up to 50 events every two seconds, retries failed batches,
 caps memory use, and flushes during server shutdown. Database uniqueness makes
 all retries safe.
 
-## 5. Production safeguards
+## 7. Production safeguards
 
-- Protect the entire dashboard with the hosting platform's access policy. The
-  player and event read APIs contain private operational data.
-- Add a Cloudflare rate-limit rule for `/api/events/*`. Start high enough for
-  expected server traffic (for example 3,000 requests/minute) and monitor before
-  tightening it. Do not rate-limit by player ID supplied in the body.
+- Add authentication before sharing the dashboard URL publicly. Public hosting
+  does not mean player operational data should be publicly readable.
+- Put Cloudflare or another reverse proxy in front of Render if you need edge
+  rate limiting. Start high enough for expected server traffic and monitor
+  before tightening it.
 - Keep batching enabled. Fifty events per request turns thousands of event
   writes into tens of HTTPS requests.
 - Enable Supabase backups/PITR appropriate to the project plan.
@@ -70,7 +89,7 @@ all retries safe.
 - Rotate `ROBLOX_INGEST_SECRET` immediately if it appears in client code, chat,
   logs, or source control.
 
-## 6. Event contracts
+## 8. Event contracts
 
 Purchase:
 
