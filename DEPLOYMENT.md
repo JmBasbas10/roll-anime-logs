@@ -27,8 +27,9 @@ the included `render.yaml`. Render will create a Node web service using:
 - start command: `npm start`
 - health check: `/api/health`
 
-The Starter plan is selected because an always-on service is preferable for
-Roblox ingestion. Change the plan in Render if needed.
+The free plan is selected. Free Render services can sleep during inactivity,
+so the first Roblox request after an idle period can take longer. The Roblox
+sender must retain retry behavior.
 
 ## 4. Configure server secrets
 
