@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import "./dashboard.css";
 import "./pagination.css";
 import "./purchases.css";
@@ -33,7 +34,10 @@ const localDateTimeValue = (date: Date) => {
 };
 
 export default function Home() {
-  const [siteTab, setSiteTab] = useState<"players" | "purchases" | "gifts">("players");
+  const pathname = usePathname();
+  const router = useRouter();
+  const pathTab = pathname.startsWith("/purchases") ? "purchases" : pathname.startsWith("/gifts") ? "gifts" : "players";
+  const [siteTab, setSiteTab] = useState<"players" | "purchases" | "gifts">(pathTab);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<PlayerResult | null>(null);
@@ -44,6 +48,8 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [pageTokens, setPageTokens] = useState<string[]>([""]);
+
+  useEffect(() => { setSiteTab(pathTab); }, [pathTab]);
 
   const loadPlayers = async (token = "", targetPage = 1, size = pageSize, tokenHistory = pageTokens) => {
     setLoadingList(true); setError("");
@@ -82,16 +88,33 @@ export default function Home() {
 
   const filtered = useMemo(() => { const value = query.trim().toLowerCase(); return players.filter((p) => p.userId.includes(value) || p.entryId.toLowerCase().includes(value) || p.username?.toLowerCase().includes(value) || p.displayName?.toLowerCase().includes(value)); }, [players, query]);
 
-  const viewPlayer = async (userId: string) => {
+  const viewPlayer = useCallback(async (userId: string, updateUrl = true) => {
     setLoadingPlayer(userId); setError("");
     try {
       const response = await fetch(`/api/player?q=${encodeURIComponent(userId)}`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not load player");
       setSelected(body);
+      if (updateUrl) router.push(`/players/${body.user.id}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) { setError(err instanceof Error ? err.message : "Could not load player"); }
     finally { setLoadingPlayer(""); }
+  }, [router]);
+
+  useEffect(() => {
+    const match = pathname.match(/^\/players\/([^/]+)/);
+    if (!match) {
+      if (selected) setSelected(null);
+      return;
+    }
+    const userId = decodeURIComponent(match[1]);
+    if (selected?.user.id !== userId && loadingPlayer !== userId) void viewPlayer(userId, false);
+  }, [pathname, selected, loadingPlayer, viewPlayer]);
+
+  const changeSiteTab = (tab: "players" | "purchases" | "gifts") => {
+    setSelected(null);
+    setSiteTab(tab);
+    router.push(`/${tab}`);
   };
 
   const directSearch = () => {
@@ -114,7 +137,7 @@ export default function Home() {
         {error && <div className="error"><span>{error}</span><button onClick={() => setError("")}>Dismiss</button></div>}
 
         {!selected ? (<>
-          <div className="site-tabs"><button className={siteTab === "players" ? "active" : ""} onClick={() => setSiteTab("players")}>Players</button><button className={siteTab === "purchases" ? "active" : ""} onClick={() => setSiteTab("purchases")}>Purchases</button><button className={siteTab === "gifts" ? "active" : ""} onClick={() => setSiteTab("gifts")}>Gifts</button></div>
+          <div className="site-tabs"><button className={siteTab === "players" ? "active" : ""} onClick={() => changeSiteTab("players")}>Players</button><button className={siteTab === "purchases" ? "active" : ""} onClick={() => changeSiteTab("purchases")}>Purchases</button><button className={siteTab === "gifts" ? "active" : ""} onClick={() => changeSiteTab("gifts")}>Gifts</button></div>
           {siteTab === "players" ? <section>
             <div className="title-row">
               <div><h2>Players</h2><p>Profiles stored in TurnBaseLive</p></div>
@@ -143,7 +166,7 @@ export default function Home() {
             </div>
           </section> : <LiveLogs type={siteTab} onError={setError} />}</>
         ) : (
-          <PlayerDetail player={selected} onBack={() => setSelected(null)} />
+          <PlayerDetail player={selected} onBack={() => { setSelected(null); router.push("/players"); }} />
         )}
       </div>
     </main>
@@ -304,7 +327,10 @@ function GiftTable({ gifts, empty = "No gift history for this player." }: { gift
 }
 
 function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => void }) {
-  const [tab, setTab] = useState<"details" | "purchases" | "gifts">("details");
+  const pathname = usePathname();
+  const router = useRouter();
+  const pathView = pathname.endsWith("/purchases") ? "purchases" : pathname.endsWith("/gifts") ? "gifts" : "details";
+  const [tab, setTab] = useState<"details" | "purchases" | "gifts">(pathView);
   const [productQuery, setProductQuery] = useState("");
   const [productPageSize, setProductPageSize] = useState(10);
   const [productPage, setProductPage] = useState(1);
@@ -317,6 +343,14 @@ function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => 
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [revisionSavedAt, setRevisionSavedAt] = useState("");
+
+  useEffect(() => { setTab(pathView); }, [pathView]);
+
+  const changeDetailTab = (view: "details" | "purchases" | "gifts") => {
+    setTab(view);
+    const suffix = view === "details" ? "" : `/${view}`;
+    router.push(`/players/${player.user.id}${suffix}`);
+  };
 
   const loadHistory = async () => {
     if (!historyDate) { setHistoryError("Choose a date and time first."); return; }
@@ -374,7 +408,7 @@ function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => 
       {historyError && <span className="history-error">{historyError}</span>}
     </div>
 
-    <div className="detail-tabs"><button className={tab === "details" ? "active" : ""} onClick={() => setTab("details")}>Player data</button><button className={tab === "purchases" ? "active" : ""} onClick={() => setTab("purchases")}>Purchases <span>{totalPurchases}</span></button><button className={tab === "gifts" ? "active" : ""} onClick={() => setTab("gifts")}>Gifts <span>{data.GiftLogs?.length || 0}</span></button></div>
+    <div className="detail-tabs"><button className={tab === "details" ? "active" : ""} onClick={() => changeDetailTab("details")}>Player data</button><button className={tab === "purchases" ? "active" : ""} onClick={() => changeDetailTab("purchases")}>Purchases <span>{totalPurchases}</span></button><button className={tab === "gifts" ? "active" : ""} onClick={() => changeDetailTab("gifts")}>Gifts <span>{data.GiftLogs?.length || 0}</span></button></div>
 
     {tab === "details" ? <><div className="stats">
       <Stat label="Gold" value={number(data.Gold)} />
