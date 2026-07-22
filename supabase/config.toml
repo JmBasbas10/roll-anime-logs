@@ -1,0 +1,4 @@
+project_id = "vfwnmhxcbptruudfcrrr"
+
+[functions.roblox-events]
+verify_jwt = false

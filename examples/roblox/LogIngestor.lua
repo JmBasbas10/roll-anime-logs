@@ -4,8 +4,8 @@ local HttpService = game:GetService("HttpService")
 
 local LogIngestor = {}
 
-local API_BASE_URL = "https://YOUR-DEPLOYED-DOMAIN"
-local INGEST_SECRET = "REPLACE_WITH_ROBLOX_INGEST_SECRET"
+local SUPABASE_FUNCTION_URL = "https://vfwnmhxcbptruudfcrrr.supabase.co/functions/v1/roblox-events"
+local INGEST_SECRET = HttpService:GetSecret("SUPABASE_INGEST_SECRET")
 local FLUSH_INTERVAL = 2
 local MAX_BATCH_SIZE = 50
 local MAX_QUEUE_SIZE = 5000
@@ -19,10 +19,6 @@ local flushing = {
 	purchase = false,
 	gift = false,
 }
-
-local function endpoint(kind)
-	return string.format("%s/api/events/%s", API_BASE_URL, kind)
-end
 
 local function takeBatch(queue)
 	local count = math.min(#queue, MAX_BATCH_SIZE)
@@ -41,13 +37,13 @@ end
 
 local function send(kind, batch)
 	local response = HttpService:RequestAsync({
-		Url = endpoint(kind),
+		Url = SUPABASE_FUNCTION_URL,
 		Method = "POST",
 		Headers = {
-			["Authorization"] = "Bearer " .. INGEST_SECRET,
+			["x-api-key"] = INGEST_SECRET,
 			["Content-Type"] = "application/json",
 		},
-		Body = HttpService:JSONEncode(batch),
+		Body = HttpService:JSONEncode({ kind = kind, events = batch }),
 	})
 	return response.Success and response.StatusCode >= 200 and response.StatusCode < 300, response.StatusCode
 end
