@@ -9,6 +9,7 @@ import "./gifts.css";
 import "./history.css";
 import "./live-logs.css";
 import "./admin-polish.css";
+import "./bootstrap-admin.css";
 import { PRODUCTS } from "./products";
 
 type Unit = { Name: string; Level?: number; Mutation?: string; Trait?: string; Slot?: number; HotbarSlot?: number; UUID?: string; isLocked?: boolean };
