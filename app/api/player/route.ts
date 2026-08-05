@@ -32,6 +32,10 @@ function datastorePath(userId: string, env: RobloxEnv) {
   return { path, entryId, datastoreId, datastoreScope };
 }
 
+function profileFromStored(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) && "Data" in value ? (value as { Data: unknown }).Data : value;
+}
+
 export async function GET(request: NextRequest) {
   const admin = await requireAdminRequest();
   if (admin instanceof Response) return admin;
@@ -48,7 +52,7 @@ export async function GET(request: NextRequest) {
     if (!response.ok) return jsonError(`Roblox Open Cloud returned HTTP ${response.status}.`, 502);
     const entry = await response.json() as { value?: unknown };
     const stored = entry.value ?? entry;
-    const data = stored && typeof stored === "object" && "Data" in stored ? (stored as { Data: unknown }).Data : stored;
+    const data = profileFromStored(stored);
     return NextResponse.json({ user, entry: { id: target.entryId, datastore: target.datastoreId, scope: target.datastoreScope }, data });
   } catch {
     return jsonError("Could not reach Roblox. Please try again.", 502);
@@ -65,12 +69,14 @@ export async function PATCH(request: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return jsonError("Invalid save request.", 400);
     const value = body as { userId?: unknown; data?: unknown };
     if (typeof value.userId !== "string" || !/^\d+$/.test(value.userId)) return jsonError("A valid player user ID is required.", 400);
-    const cleanData = validatePlayerData(value.data);
+
     const target = datastorePath(value.userId, env);
     const currentResponse = await fetch(target.path, { headers: { "x-api-key": env.ROBLOX_API_KEY, Accept: "application/json" }, cache: "no-store" });
     if (!currentResponse.ok) return jsonError(`Roblox Open Cloud returned HTTP ${currentResponse.status}.`, 502);
     const currentEntry = await currentResponse.json() as { value?: unknown };
     const currentValue = currentEntry.value ?? currentEntry;
+    const currentData = profileFromStored(currentValue);
+    const cleanData = validatePlayerData(value.data, currentData);
     const nextValue = currentValue && typeof currentValue === "object" && !Array.isArray(currentValue) && "Data" in currentValue ? { ...currentValue, Data: cleanData } : cleanData;
     const saveResponse = await fetch(target.path, { method: "PATCH", headers: { "x-api-key": env.ROBLOX_API_KEY, Accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ value: nextValue }), cache: "no-store" });
     if (!saveResponse.ok) return jsonError(`Roblox update returned HTTP ${saveResponse.status}.`, 502);
