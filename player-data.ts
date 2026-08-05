@@ -1,12 +1,4 @@
-const topFields = new Set([
-  "Gold", "Token", "Spin", "SpinRechargeAt", "SpinLastClaim", "Inventory", "Equipped", "AutoSkill",
-  "Cloning", "Reduce50Uses", "Reduce50EvolUses", "GiftLogs", "TradeLogs", "Items", "Evolution",
-  "Upgrades", "Profile", "Faction", "Quest", "Settings", "Index", "Pity", "RobuxSpent", "Gamepasses",
-  "CodeRedeemed", "ProductsPurchased", "PurchaseIdCache", "VIPReward", "FreeGroup", "CodesRedeemed",
-  "TutorialStep5Reward", "CompletedTutorial", "FlexCharacters", "Flex",
-]);
-
-const requiredObjects = ["Upgrades", "Profile", "Faction", "Quest", "Settings", "Pity", "VIPReward"];
+const requiredObjects = ["Upgrades", "Profile", "Quest", "Settings", "Pity", "VIPReward"];
 const requiredArrays = ["Inventory", "Equipped", "Items", "GiftLogs", "TradeLogs", "Evolution", "AutoSkill", "Cloning", "Index", "CodeRedeemed", "CodesRedeemed", "FlexCharacters"];
 
 const defaultObjects: Record<string, unknown> = {
@@ -28,18 +20,6 @@ const defaultObjects: Record<string, unknown> = {
     Level: 0,
     Claimed: [],
     Summons: 0,
-  },
-  Faction: {
-    Season: 1,
-    Team: "",
-    Currency: 0,
-    Quest: {
-      LastDailyReset: "",
-      LastWeeklyReset: "",
-      Claimed: { Daily: [], Weekly: [] },
-      Progress: { Daily: {}, Weekly: {} },
-      Active: { Daily: [], Weekly: [] },
-    },
   },
   Quest: {
     LastDailyReset: 0,
@@ -108,9 +88,6 @@ const defaultValues: Record<string, unknown> = {
 export function validatePlayerData(input: unknown) {
   if (!isRecord(input)) throw new Error("Player data must be an object.");
   const data = addMissingDefaults(input);
-  for (const key of Object.keys(data)) {
-    if (!topFields.has(key)) throw new Error(`Unexpected top-level field: ${key}.`);
-  }
   for (const key of requiredObjects) {
     if (!isRecord(data[key])) throw new Error(`${key} must be an object.`);
   }

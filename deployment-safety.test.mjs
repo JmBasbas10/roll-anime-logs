@@ -68,9 +68,7 @@ test("legacy player saves get safe datastore defaults", async () => {
     read("../app/bootstrap-admin.css"),
   ]);
 
-  assert.match(playerData, /Faction: \{/);
   assert.match(playerData, /if \(data\[key\] === undefined\) data\[key\] = cloneDefault/);
-  assert.match(playerData, /Faction.*must be an object/s);
   assert.match(bootstrapCss, /position: static !important/);
   assert.doesNotMatch(bootstrapCss, /top: 76px/);
 });
