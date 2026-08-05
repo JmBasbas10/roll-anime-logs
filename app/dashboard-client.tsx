@@ -521,7 +521,7 @@ function PlayerDetail({ player, editOpen, onEditOpen, onBack }: { player: Player
   const pagedItems = items.slice((safeItemPage - 1) * itemPageSize, safeItemPage * itemPageSize);
 
   return <section>
-    <button className="back" onClick={onBack}><- Back to players</button>
+    <button className="back" onClick={onBack}>Back to players</button>
     <div className="player-heading">
       <div className="avatar">{player.user.name.slice(0, 2).toUpperCase()}</div>
       <div><h2>{player.user.displayName || player.user.name}</h2><p>{player.user.displayName && player.user.displayName !== player.user.name ? `@${player.user.name} - ` : ""}User ID {player.user.id} - <code>{player.entry.id}</code></p></div>
