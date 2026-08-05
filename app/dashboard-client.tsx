@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import "./dashboard.css";
+import "./admin-polish.css";
 import "./pagination.css";
 import "./purchases.css";
 import "./gifts.css";
@@ -50,6 +51,7 @@ export default function DashboardClient({ session }: { session: SessionUser }) {
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<PlayerResult | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingPlayer, setLoadingPlayer] = useState("");
   const [error, setError] = useState("");
@@ -97,13 +99,14 @@ export default function DashboardClient({ session }: { session: SessionUser }) {
 
   const filtered = useMemo(() => { const value = query.trim().toLowerCase(); return players.filter((p) => p.userId.includes(value) || p.entryId.toLowerCase().includes(value) || p.username?.toLowerCase().includes(value) || p.displayName?.toLowerCase().includes(value)); }, [players, query]);
 
-  const viewPlayer = useCallback(async (userId: string, updateUrl = true) => {
+  const viewPlayer = useCallback(async (userId: string, updateUrl = true, openEdit = false) => {
     setLoadingPlayer(userId); setError("");
     try {
       const response = await fetch(`/api/player?q=${encodeURIComponent(userId)}`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not load player");
       setSelected(body);
+      setEditOpen(openEdit);
       if (updateUrl) router.push(`/players/${body.user.id}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) { setError(err instanceof Error ? err.message : "Could not load player"); }
@@ -170,18 +173,18 @@ export default function DashboardClient({ session }: { session: SessionUser }) {
                 <tbody>
                   {loadingList && <tr><td colSpan={5} className="empty">Loading players...</td></tr>}
                   {!loadingList && filtered.length === 0 && <tr><td colSpan={5} className="empty">No match in the loaded table. Press Search to look up "{query.trim()}" directly on Roblox.</td></tr>}
-                  {!loadingList && filtered.map((player) => <tr key={player.entryId}><td><div className="player-cell"><span>{(player.displayName || player.username || "?").slice(0, 2).toUpperCase()}</span><div><strong>{player.displayName || player.username || "Unavailable"}</strong>{player.displayName && player.username && player.displayName !== player.username && <small>@{player.username}</small>}</div></div></td><td>{player.userId}</td><td><code>{player.entryId}</code></td><td>{player.scope}</td><td className="action"><button className="view" onClick={() => viewPlayer(player.userId)} disabled={loadingPlayer === player.userId}>{loadingPlayer === player.userId ? "Loading..." : "View"}</button></td></tr>)}
+                  {!loadingList && filtered.map((player) => <tr key={player.entryId}><td><div className="player-cell"><span>{(player.displayName || player.username || "?").slice(0, 2).toUpperCase()}</span><div><strong>{player.displayName || player.username || "Unavailable"}</strong>{player.displayName && player.username && player.displayName !== player.username && <small>@{player.username}</small>}</div></div></td><td>{player.userId}</td><td><code>{player.entryId}</code></td><td>{player.scope}</td><td className="action action-split"><button className="view secondary-action" onClick={() => viewPlayer(player.userId, true, false)} disabled={loadingPlayer === player.userId}>{loadingPlayer === player.userId ? "Loading..." : "View"}</button><button className="view" onClick={() => viewPlayer(player.userId, true, true)} disabled={loadingPlayer === player.userId}>Edit</button></td></tr>)}
                 </tbody>
               </table>
             </div>
             <div className="pagination">
               <label>Rows per page <select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
               <span>{players.length} players on this page</span>
-              <div><button onClick={previousPage} disabled={page === 1 || loadingList} aria-label="Previous page">Prev</button><strong>{page}</strong><button onClick={nextPage} disabled={!nextPageToken || loadingList} aria-label="Next page">Next</button></div>
+              <div><button onClick={previousPage} disabled={page === 1 || loadingList} aria-label="Previous page"><</button><strong>{page}</strong><button onClick={nextPage} disabled={!nextPageToken || loadingList} aria-label="Next page">></button></div>
             </div>
           </section> : siteTab === "admin" ? <AdminPanel onError={setError} /> : <LiveLogs type={siteTab} onError={setError} />}</>
         ) : (
-          <PlayerDetail player={selected} onBack={() => { setSelected(null); router.push("/players"); }} />
+          <PlayerDetail player={selected} editOpen={editOpen} onEditOpen={setEditOpen} onBack={() => { setSelected(null); setEditOpen(false); router.push("/players"); }} />
         )}
       </div>
     </main>
@@ -307,6 +310,84 @@ function AdminPanel({ onError }: { onError: (message: string) => void }) {
   </section>;
 }
 
+// Kept temporarily for backwards-compatible state during local hot reload.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function GlobalPurchases({ onError }: { onError: (message: string) => void }) {
+  const [totals, setTotals] = useState<Record<string, number>>({});
+  const [scanned, setScanned] = useState(0);
+  const [totalProfiles, setTotalProfiles] = useState(0);
+  const [buyers, setBuyers] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const [query, setQuery] = useState("");
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  const [lastSynced, setLastSynced] = useState("");
+
+  const sync = async () => {
+    setSyncing(true); setComplete(false); setTotals({}); setScanned(0); setTotalProfiles(0); setBuyers(0); onError("");
+    let token = "";
+    const combined: Record<string, number> = {};
+    let scannedProfiles = 0;
+    let purchasingProfiles = 0;
+    try {
+      const countProfiles = (async () => {
+        let countToken = "";
+        let profileCount = 0;
+        do {
+          const countParams = new URLSearchParams({ countOnly: "true" });
+          if (countToken) countParams.set("pageToken", countToken);
+          const countResponse = await fetch(`/api/purchase-totals?${countParams}`, { cache: "no-store" });
+          const countBody = await countResponse.json();
+          if (!countResponse.ok) throw new Error(countBody.error || "Could not count player profiles");
+          profileCount += Number(countBody.scanned || 0);
+          setTotalProfiles(profileCount);
+          countToken = countBody.nextPageToken || "";
+        } while (countToken);
+        return profileCount;
+      })();
+
+      do {
+        const params = new URLSearchParams();
+        if (token) params.set("pageToken", token);
+        const response = await fetch(`/api/purchase-totals?${params}`, { cache: "no-store" });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Purchase synchronization failed");
+        for (const [id, count] of Object.entries(body.totals || {})) combined[id] = (combined[id] || 0) + Number(count);
+        scannedProfiles += Number(body.scanned || 0);
+        purchasingProfiles += Number(body.profilesWithPurchases || 0);
+        setTotals({ ...combined }); setScanned(scannedProfiles); setBuyers(purchasingProfiles);
+        token = body.nextPageToken || "";
+        if (token) await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (token);
+      await countProfiles;
+      setComplete(true); setLastSynced(new Date().toLocaleTimeString());
+    } catch (error) { onError(error instanceof Error ? error.message : "Purchase synchronization failed"); }
+    finally { setSyncing(false); }
+  };
+
+  const rows = PRODUCTS.map((product) => ({ ...product, purchases: Number(totals[String(product.id)] || 0) })).sort((a, b) => b.purchases - a.purchases || a.name.localeCompare(b.name));
+  const filtered = rows.filter((product) => `${product.name} ${product.id} ${product.category}`.toLowerCase().includes(query.toLowerCase()));
+  const totalPurchases = rows.reduce((sum, product) => sum + product.purchases, 0);
+  const syncPercent = complete ? 100 : totalProfiles > 0 ? Math.min(99, Math.floor((scanned / totalProfiles) * 100)) : 0;
+  const purchasedProducts = rows.filter((product) => product.purchases > 0).length;
+  const topProduct = rows[0];
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  return <section>
+    <div className="title-row"><div><h2>Purchases</h2><p>Combined developer-product counters across all player profiles</p></div><button className="secondary" onClick={sync} disabled={syncing}>{syncing ? `Scanning ${scanned}...` : complete ? "Refresh totals" : "Sync totals"}</button></div>
+    {!complete && !syncing && <div className="sync-empty"><strong>Global totals are not loaded yet</strong><p>Sync reads player profiles in small batches and combines their saved purchase counters. No player data is modified.</p><button className="view" onClick={sync}>Start sync</button></div>}
+    {(syncing || complete) && <><div className="sync-status"><span className={complete ? "done" : ""}><i />{complete ? "Sync complete" : totalProfiles ? "Synchronizing profiles" : "Counting profiles"}</span><span>{syncPercent}% - {scanned.toLocaleString()}{totalProfiles ? ` of ${totalProfiles.toLocaleString()}` : ""} profiles scanned{lastSynced ? ` - Updated ${lastSynced}` : ""}</span></div><div className="sync-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={syncPercent}><span style={{ width: `${syncPercent}%` }} /></div>
+      <div className="stats"><Stat label="Total purchases" value={number(totalPurchases)} /><Stat label="Purchasing profiles" value={number(buyers)} /><Stat label="Products purchased" value={number(purchasedProducts)} /><Stat label="Most purchased" value={topProduct?.purchases ? topProduct.name : "None"} /></div>
+      <div className="purchase-heading"><div><h3>Product rankings</h3><p>Sorted by total purchase count across the scanned datastore.</p></div><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search products" /></div>
+      <div className="table-card purchase-table"><table><thead><tr><th>Rank</th><th>Product</th><th>Category</th><th>Product ID</th><th>Purchases</th><th>Share</th></tr></thead><tbody>{paged.map((product, index) => <tr key={product.id}><td>#{(safePage - 1) * pageSize + index + 1}</td><td><strong>{product.name}</strong></td><td>{product.category}</td><td><code>{product.id}</code></td><td><strong>{number(product.purchases)}</strong></td><td>{totalPurchases ? `${((product.purchases / totalPurchases) * 100).toFixed(1)}%` : "0%"}</td></tr>)}</tbody></table></div>
+      <div className="pagination"><label>Rows per page <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><span>{filtered.length} products</span><div><button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1}><</button><strong>{safePage}</strong><button onClick={() => setPage(Math.min(pageCount, safePage + 1))} disabled={safePage === pageCount}>></button></div></div>
+    </>}
+  </section>;
+}
+
 const giftKey = (gift: GiftLog) => `${gift.Id ?? ""}-${gift.GiverId || gift.GiverName || ""}-${gift.ReceiverId || gift.ReceiverName || ""}-${gift.Time || ""}-${gift.Unit?.UUID || gift.Unit?.Name || ""}`;
 const giftTime = (value?: number) => {
   if (!value) return "-";
@@ -325,11 +406,11 @@ function GiftTable({ gifts, empty = "No gift history for this player." }: { gift
   return <>
     <div className="gift-heading"><div><h3>Gift history</h3><p>All saved transfers for this player, newest first.</p></div><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search player, unit, or gift ID" /></div>
     <div className="table-card gift-table"><table><thead><tr><th>Gift ID</th><th>Giver</th><th>Receiver</th><th>Unit</th><th>Time</th></tr></thead><tbody>{paged.length ? paged.map((gift, index) => <tr key={`${giftKey(gift)}-${index}`}><td><code>{gift.Id ?? "-"}</code></td><td><strong>{gift.GiverName || "Unknown"}</strong><br /><small>{gift.GiverId || "-"}</small></td><td><strong>{gift.ReceiverName || "Unknown"}</strong><br /><small>{gift.ReceiverId || "-"}</small></td><td className="gift-unit"><strong>{gift.Unit?.Name || "Unknown unit"}</strong><small>Level {gift.Unit?.Level || 1}{gift.Unit?.Mutation ? ` - ${gift.Unit.Mutation}` : ""}{gift.Unit?.Trait ? ` - ${gift.Unit.Trait}` : ""}</small></td><td>{giftTime(gift.Time)}</td></tr>) : <tr><td colSpan={5} className="empty">{empty}</td></tr>}</tbody></table></div>
-    <div className="pagination"><label>Rows per page <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><span>{filtered.length} gifts</span><div><button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1}>Prev</button><strong>{safePage}</strong><button onClick={() => setPage(Math.min(pageCount, safePage + 1))} disabled={safePage === pageCount}>Next</button></div></div>
+    <div className="pagination"><label>Rows per page <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><span>{filtered.length} gifts</span><div><button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1}><</button><strong>{safePage}</strong><button onClick={() => setPage(Math.min(pageCount, safePage + 1))} disabled={safePage === pageCount}>></button></div></div>
   </>;
 }
 
-function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => void }) {
+function PlayerDetail({ player, editOpen, onEditOpen, onBack }: { player: PlayerResult; editOpen: boolean; onEditOpen: (open: boolean) => void; onBack: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const pathView = pathname.endsWith("/purchases") ? "purchases" : pathname.endsWith("/gifts") ? "gifts" : "details";
@@ -440,7 +521,7 @@ function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => 
   const pagedItems = items.slice((safeItemPage - 1) * itemPageSize, safeItemPage * itemPageSize);
 
   return <section>
-    <button className="back" onClick={onBack}>Back to players</button>
+    <button className="back" onClick={onBack}><- Back to players</button>
     <div className="player-heading">
       <div className="avatar">{player.user.name.slice(0, 2).toUpperCase()}</div>
       <div><h2>{player.user.displayName || player.user.name}</h2><p>{player.user.displayName && player.user.displayName !== player.user.name ? `@${player.user.name} - ` : ""}User ID {player.user.id} - <code>{player.entry.id}</code></p></div>
@@ -459,22 +540,31 @@ function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => 
       <div className="support-actions">
         <button className="secondary" onClick={() => navigator.clipboard.writeText(player.user.id)}>Copy user ID</button>
         <button className="secondary" onClick={() => navigator.clipboard.writeText(JSON.stringify(data, null, 2))}>Copy JSON</button>
+        <button className="view" onClick={() => onEditOpen(!editOpen)}>{editOpen ? "Close editor" : "Edit data"}</button>
       </div>
     </div>
 
-    <div className="editor-panel">
-      <div className="editor-heading"><div><h3>Common repairs</h3><p>Change the fields support usually needs, then confirm and save.</p></div><span className={isDirty ? "dirty-pill" : "clean-pill"}>{isDirty ? "Unsaved changes" : "Current data"}</span></div>
-      <div className="quick-edit-grid">
-        <label>Gold<input inputMode="numeric" value={toNumberValue(editedData?.Gold)} onChange={(event) => updateDraft((draft) => { draft.Gold = clampInputNumber(event.target.value); })} /></label>
-        <label>Token<input inputMode="numeric" value={toNumberValue(editedData?.Token)} onChange={(event) => updateDraft((draft) => { draft.Token = clampInputNumber(event.target.value); })} /></label>
-        <label>Spin<input inputMode="numeric" value={toNumberValue(editedData?.Spin)} onChange={(event) => updateDraft((draft) => { draft.Spin = clampInputNumber(event.target.value); })} /></label>
-        <label>Robux spent<input inputMode="numeric" value={toNumberValue(editedData?.RobuxSpent)} onChange={(event) => updateDraft((draft) => { draft.RobuxSpent = clampInputNumber(event.target.value); })} /></label>
-        <label>Legendary pity<input inputMode="numeric" value={toNumberValue(editedData?.Pity?.Legendary)} onChange={(event) => updateDraft((draft) => { draft.Pity = { ...(draft.Pity || {}), Legendary: clampInputNumber(event.target.value) }; })} /></label>
-        <label>Mythic pity<input inputMode="numeric" value={toNumberValue(editedData?.Pity?.Mythic)} onChange={(event) => updateDraft((draft) => { draft.Pity = { ...(draft.Pity || {}), Mythic: clampInputNumber(event.target.value) }; })} /></label>
-        <label>Secret pity<input inputMode="numeric" value={toNumberValue(editedData?.Pity?.Secret)} onChange={(event) => updateDraft((draft) => { draft.Pity = { ...(draft.Pity || {}), Secret: clampInputNumber(event.target.value) }; })} /></label>
-        <label>Inventory limit<input inputMode="numeric" value={toNumberValue(editedData?.Upgrades?.Inventory)} onChange={(event) => updateDraft((draft) => { draft.Upgrades = { ...(draft.Upgrades || {}), Inventory: clampInputNumber(event.target.value) }; })} /></label>
-        <label>Equipped slots<input inputMode="numeric" value={toNumberValue(editedData?.Upgrades?.Slots)} onChange={(event) => updateDraft((draft) => { draft.Upgrades = { ...(draft.Upgrades || {}), Slots: clampInputNumber(event.target.value) }; })} /></label>
-        <label>Title<input value={editedData?.Profile?.Title || ""} onChange={(event) => updateDraft((draft) => { draft.Profile = { ...(draft.Profile || {}), Title: event.target.value }; })} /></label>
+    {editOpen && <div className="editor-panel">
+      <div className="editor-heading"><div><h3>Edit player data</h3><p>Use quick repairs for common support fixes. Open advanced JSON only for unusual corrections.</p></div><span className={isDirty ? "dirty-pill" : "clean-pill"}>{isDirty ? "Unsaved changes" : "Current data"}</span></div>
+      <div className="quick-edit-sections">
+        <fieldset><legend>Currency</legend><div className="quick-edit-grid">
+          <label><span>Gold</span><input type="number" min="0" value={toNumberValue(editedData?.Gold)} onChange={(event) => updateDraft((draft) => { draft.Gold = clampInputNumber(event.target.value); })} /></label>
+          <label><span>Token</span><input type="number" min="0" value={toNumberValue(editedData?.Token)} onChange={(event) => updateDraft((draft) => { draft.Token = clampInputNumber(event.target.value); })} /></label>
+          <label><span>Spin</span><input type="number" min="0" value={toNumberValue(editedData?.Spin)} onChange={(event) => updateDraft((draft) => { draft.Spin = clampInputNumber(event.target.value); })} /></label>
+          <label><span>Robux spent</span><input type="number" min="0" value={toNumberValue(editedData?.RobuxSpent)} onChange={(event) => updateDraft((draft) => { draft.RobuxSpent = clampInputNumber(event.target.value); })} /></label>
+        </div></fieldset>
+        <fieldset><legend>Pity</legend><div className="quick-edit-grid">
+          <label><span>Legendary</span><input type="number" min="0" value={toNumberValue(editedData?.Pity?.Legendary)} onChange={(event) => updateDraft((draft) => { draft.Pity = { ...(draft.Pity || {}), Legendary: clampInputNumber(event.target.value) }; })} /></label>
+          <label><span>Mythic</span><input type="number" min="0" value={toNumberValue(editedData?.Pity?.Mythic)} onChange={(event) => updateDraft((draft) => { draft.Pity = { ...(draft.Pity || {}), Mythic: clampInputNumber(event.target.value) }; })} /></label>
+          <label><span>Secret</span><input type="number" min="0" value={toNumberValue(editedData?.Pity?.Secret)} onChange={(event) => updateDraft((draft) => { draft.Pity = { ...(draft.Pity || {}), Secret: clampInputNumber(event.target.value) }; })} /></label>
+        </div></fieldset>
+        <fieldset><legend>Capacity</legend><div className="quick-edit-grid">
+          <label><span>Inventory limit</span><input type="number" min="0" value={toNumberValue(editedData?.Upgrades?.Inventory)} onChange={(event) => updateDraft((draft) => { draft.Upgrades = { ...(draft.Upgrades || {}), Inventory: clampInputNumber(event.target.value) }; })} /></label>
+          <label><span>Equipped slots</span><input type="number" min="0" value={toNumberValue(editedData?.Upgrades?.Slots)} onChange={(event) => updateDraft((draft) => { draft.Upgrades = { ...(draft.Upgrades || {}), Slots: clampInputNumber(event.target.value) }; })} /></label>
+        </div></fieldset>
+        <fieldset><legend>Profile</legend><div className="quick-edit-grid">
+          <label className="wide-field"><span>Title</span><input value={editedData?.Profile?.Title || ""} onChange={(event) => updateDraft((draft) => { draft.Profile = { ...(draft.Profile || {}), Title: event.target.value }; })} /></label>
+        </div></fieldset>
       </div>
       <button className="raw-toggle" onClick={() => setRawOpen((open) => !open)}>{rawOpen ? "Hide advanced JSON" : "Show advanced JSON"}</button>
       {rawOpen && <textarea value={editText} onChange={(event) => { setEditText(event.target.value); setSavedMessage(""); setConfirmSave(false); }} spellCheck={false} />}
@@ -485,7 +575,7 @@ function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => 
         {editError && <span className="history-error">{editError}</span>}
         {savedMessage && <span className="save-note">{savedMessage}</span>}
       </div>
-    </div>
+    </div>}
 
     <div className="detail-tabs"><button className={tab === "details" ? "active" : ""} onClick={() => changeDetailTab("details")}>Player data</button><button className={tab === "purchases" ? "active" : ""} onClick={() => changeDetailTab("purchases")}>Purchases <span>{totalPurchases}</span></button><button className={tab === "gifts" ? "active" : ""} onClick={() => changeDetailTab("gifts")}>Gifts <span>{data.GiftLogs?.length || 0}</span></button></div>
 
@@ -516,13 +606,14 @@ function PlayerDetail({ player, onBack }: { player: PlayerResult; onBack: () => 
       <div className="pagination">
         <label>Rows per page <select value={productPageSize} onChange={(event) => { setProductPageSize(Number(event.target.value)); setProductPage(1); }}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
         <span>{visibleProducts.length} products</span>
-        <div><button onClick={() => setProductPage(Math.max(1, safeProductPage - 1))} disabled={safeProductPage === 1} aria-label="Previous product page">Prev</button><strong>{safeProductPage}</strong><button onClick={() => setProductPage(Math.min(productPageCount, safeProductPage + 1))} disabled={safeProductPage === productPageCount} aria-label="Next product page">Next</button></div>
+        <div><button onClick={() => setProductPage(Math.max(1, safeProductPage - 1))} disabled={safeProductPage === 1} aria-label="Previous product page"><</button><strong>{safeProductPage}</strong><button onClick={() => setProductPage(Math.min(productPageCount, safeProductPage + 1))} disabled={safeProductPage === productPageCount} aria-label="Next product page">></button></div>
       </div>
     </section> : <GiftTable gifts={[...(data.GiftLogs || [])].sort((a, b) => Number(b.Time || 0) - Number(a.Time || 0))} />}
   </section>;
 }
 
 function Stat({ label, value }: { label: string; value: string }) { return <article className="stat"><span>{label}</span><strong>{value}</strong></article>; }
-function TablePagination({ label, total, page, pageCount, pageSize, onPage, onPageSize }: { label: string; total: number; page: number; pageCount: number; pageSize: number; onPage: (page: number) => void; onPageSize: (size: number) => void }) { return <div className="pagination"><label>Rows per page <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><span>{total} {label}</span><div><button onClick={() => onPage(Math.max(1, page - 1))} disabled={page === 1} aria-label={`Previous ${label} page`}>Prev</button><strong>{page}</strong><button onClick={() => onPage(Math.min(pageCount, page + 1))} disabled={page === pageCount} aria-label={`Next ${label} page`}>Next</button></div></div>; }
+function TablePagination({ label, total, page, pageCount, pageSize, onPage, onPageSize }: { label: string; total: number; page: number; pageCount: number; pageSize: number; onPage: (page: number) => void; onPageSize: (size: number) => void }) { return <div className="pagination"><label>Rows per page <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><span>{total} {label}</span><div><button onClick={() => onPage(Math.max(1, page - 1))} disabled={page === 1} aria-label={`Previous ${label} page`}><</button><strong>{page}</strong><button onClick={() => onPage(Math.min(pageCount, page + 1))} disabled={page === pageCount} aria-label={`Next ${label} page`}>></button></div></div>; }
 function Card({ title, children }: { title: string; children: React.ReactNode }) { return <article className="card"><h3>{title}</h3>{children}</article>; }
 function DataRow({ label, value }: { label: string; value: string }) { return <div className="data-row"><span>{label}</span><strong>{value}</strong></div>; }
+
