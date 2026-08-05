@@ -1,19 +1,57 @@
 const requiredObjects = ["Upgrades", "Profile", "Quest", "Settings", "Pity", "VIPReward", "Index", "CodeRedeemed", "CodesRedeemed"];
 const requiredArrays = ["Inventory", "Equipped", "Items", "GiftLogs", "TradeLogs", "Evolution", "AutoSkill", "Cloning", "FlexCharacters"];
 
-export function validatePlayerData(input: unknown) {
+export function validatePlayerData(input: unknown, current?: unknown) {
   if (!isRecord(input)) throw new Error("Player data must be an object.");
+  if (isRecord(current)) {
+    for (const key of changedKeys(current, input)) validateField(key, input[key]);
+    return input;
+  }
+
   for (const key of requiredObjects) if (!isRecord(input[key])) throw new Error(`${key} must be an object.`);
   for (const key of requiredArrays) if (!Array.isArray(input[key])) throw new Error(`${key} must be an array.`);
-  scanValue(input, "Data", 0);
-  numberField(input, "Gold", 0, 1_000_000_000_000);
-  numberField(input, "Token", 0, 1_000_000_000);
-  numberField(input, "Spin", 0, 1_000_000);
-  numberField(input, "RobuxSpent", 0, 10_000_000_000);
-  validateUnits(input.Inventory, "Inventory");
-  validateUnits(input.Equipped, "Equipped");
-  validateItems(input.Items);
+  for (const [key, value] of Object.entries(input)) validateField(key, value);
   return input;
+}
+
+function changedKeys(current: Record<string, unknown>, next: Record<string, unknown>) {
+  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+  return [...keys].filter((key) => stableString(current[key]) !== stableString(next[key]));
+}
+
+function stableString(value: unknown) {
+  return JSON.stringify(sortForCompare(value));
+}
+
+function sortForCompare(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortForCompare);
+  if (isRecord(value)) return Object.keys(value).sort().reduce<Record<string, unknown>>((next, key) => {
+    next[key] = sortForCompare(value[key]);
+    return next;
+  }, {});
+  return value;
+}
+
+function validateField(key: string, value: unknown) {
+  if (value === undefined) throw new Error(`${key} cannot be removed.`);
+  scanValue(value, key, 0);
+  if (objectFields().has(key) && !isRecord(value)) throw new Error(`${key} must be an object.`);
+  if (arrayFields().has(key) && !Array.isArray(value)) throw new Error(`${key} must be an array.`);
+  if (key === "Gold") numberValue(value, "Gold", 0, 1_000_000_000_000);
+  if (key === "Token") numberValue(value, "Token", 0, 1_000_000_000);
+  if (key === "Spin") numberValue(value, "Spin", 0, 1_000_000);
+  if (key === "RobuxSpent") numberValue(value, "RobuxSpent", 0, 10_000_000_000);
+  if (key === "Inventory") validateUnits(value, "Inventory");
+  if (key === "Equipped") validateUnits(value, "Equipped");
+  if (key === "Items") validateItems(value);
+}
+
+function objectFields() {
+  return new Set(requiredObjects);
+}
+
+function arrayFields() {
+  return new Set(requiredArrays);
 }
 
 function validateUnits(value: unknown, field: string) {
@@ -55,8 +93,7 @@ function scanValue(value: unknown, path: string, depth: number) {
   }
 }
 
-function numberField(record: Record<string, unknown>, key: string, min: number, max: number) {
-  const value = record[key];
+function numberValue(value: unknown, key: string, min: number, max: number) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) throw new Error(`${key} must be between ${min} and ${max}.`);
 }
 
