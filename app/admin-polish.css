@@ -204,9 +204,9 @@ th {
   font-size: 10px;
   letter-spacing: .9px;
   padding: 12px 18px;
-  position: sticky;
-  top: 76px;
-  z-index: 1;
+  position: static;
+  top: auto;
+  z-index: auto;
 }
 
 td {
