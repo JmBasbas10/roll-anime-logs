@@ -1,5 +1,5 @@
-const requiredObjects = ["Upgrades", "Profile", "Quest", "Settings", "Pity", "VIPReward"];
-const requiredArrays = ["Inventory", "Equipped", "Items", "GiftLogs", "TradeLogs", "Evolution", "AutoSkill", "Cloning", "Index", "CodeRedeemed", "CodesRedeemed", "FlexCharacters"];
+const requiredObjects = ["Upgrades", "Profile", "Quest", "Settings", "Pity", "VIPReward", "Index", "CodeRedeemed", "CodesRedeemed"];
+const requiredArrays = ["Inventory", "Equipped", "Items", "GiftLogs", "TradeLogs", "Evolution", "AutoSkill", "Cloning", "FlexCharacters"];
 
 export function validatePlayerData(input: unknown) {
   if (!isRecord(input)) throw new Error("Player data must be an object.");
