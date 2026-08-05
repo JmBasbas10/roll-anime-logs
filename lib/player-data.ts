@@ -1,4 +1,4 @@
-const requiredObjects = ["Upgrades", "Profile", "Faction", "Quest", "Settings", "Pity", "VIPReward"];
+const requiredObjects = ["Upgrades", "Profile", "Quest", "Settings", "Pity", "VIPReward"];
 const requiredArrays = ["Inventory", "Equipped", "Items", "GiftLogs", "TradeLogs", "Evolution", "AutoSkill", "Cloning", "Index", "CodeRedeemed", "CodesRedeemed", "FlexCharacters"];
 
 export function validatePlayerData(input: unknown) {
